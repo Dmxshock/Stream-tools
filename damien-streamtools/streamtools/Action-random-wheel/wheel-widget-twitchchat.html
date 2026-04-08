@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spinning Wheel Widget</title>
+  <style>
+    body { background: #222; color: #eee; font-family: Arial, sans-serif; }
+    #container { display: flex; }
+    #wheel-area { position: relative; width: 400px; height: 400px; }
+    #wheel-canvas { background: #fff; border-radius: 50%; }
+    #triangle { position: absolute; right: -20px; top: 190px; width: 0; height: 0;
+      border-top: 20px solid transparent; border-bottom: 20px solid transparent;
+      border-left: 20px solid red; }
+    #side-panel { margin-left: 30px; width: 200px; }
+    #choices-list { margin-bottom: 10px; }
+    #selected { font-weight: bold; color: #6cf; margin-bottom: 10px; }
+    .cmd { background: #444; color: #fff; border: none; padding: 8px; margin: 2px; width: 90px; cursor: pointer; }
+    .cmd:active { background: #666; }
+    #chat-cmds { font-size: 12px; margin-top: 10px; }
+    #chat-log { font-size: 12px; margin-top: 10px; max-height: 80px; overflow-y: auto; background: #333; padding: 5px; border-radius: 5px;}
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="wheel-area">
+      <canvas id="wheel-canvas" width="400" height="400"></canvas>
+      <div id="triangle"></div>
+    </div>
+    <div id="side-panel">
+      <div id="selected">Selected: None</div>
+      <ul id="choices-list"></ul>
+      <input type="text" id="add-input" placeholder="Add choice" style="width:120px;">
+      <button class="cmd" onclick="handleCmd('!add')">Add</button>
+      <br>
+      <button class="cmd" onclick="handleCmd('!remove')">Remove</button>
+      <button class="cmd" onclick="handleCmd('!shuffle')">Shuffle</button>
+      <button class="cmd" onclick="handleCmd('!image')">Image</button>
+      <button class="cmd" onclick="handleCmd('!music')">Music</button>
+      <button class="cmd" onclick="handleCmd('!spin')">Spin</button>
+      <button class="cmd" onclick="handleCmd('!reset')">Reset</button>
+      <div id="chat-cmds"></div>
+      <div id="chat-log"></div>
+    </div>
+  </div>
+  <!-- Load tmi.js from CDN -->
+  <script src="https://unpkg.com/tmi.js/dist/tmi.min.js"></script>
+  <script>
+    // Default values
+    let choices = ["1", "2", "3", "4"];
+    let colors = choices.map(() => randomColor());
+    let selectedIndex = null;
+    let spinning = false;
+    let imageMode = false;
+    let wheelImage = null;
+    let musicFiles = [
+      "https://raw.githubusercontent.com/Dmxshock/damien-streamtools/main/spinning%20wheel%20project/wheel%20of%20chance/wheel%20sounds/sound1.wav",
+      "https://raw.githubusercontent.com/Dmxshock/damien-streamtools/main/spinning%20wheel%20project/wheel%20of%20chance/wheel%20sounds/sound2.wav",
+      "https://raw.githubusercontent.com/Dmxshock/damien-streamtools/main/spinning%20wheel%20project/wheel%20of%20chance/wheel%20sounds/sound3.wav",
+      "https://raw.githubusercontent.com/Dmxshock/damien-streamtools/main/spinning%20wheel%20project/wheel%20of%20chance/wheel%20sounds/sound4.mp3"
+    ];
+    let currentMusic = null;
+    let chatCommands = {};
+
+const chatCommandsData = {
+  "commands": [
+    {
+      "command": "!spin",
+      "action": "spin_wheel",
+      "description": "Spin the wheel"
+    },
+    {
+      "command": "!add",
+      "action": "add_choice",
+      "description": "Add a choice to the wheel. Usage: !add <choice>"
+    },
+    {
+      "command": "!remove",
+      "action": "remove_choice",
+      "description": "Remove the selected choice"
+    },
+    {
+      "command": "!shuffle",
+      "action": "shuffle_choices",
+      "description": "Shuffle the choices on the wheel"
+    },
+    {
+      "command": "!image",
+      "action": "toggle_image_mode",
+      "description": "Toggle image mode for the wheel"
+    },
+    {
+      "command": "!music",
+      "action": "upload_music",
+      "description": "Upload or select music for the wheel"
+    },
+    {
+      "command": "!reset",
+      "action": "reset_wheel",
+      "description": "Reset the wheel to default choices"
+    }
+  ]
+};
+
+chatCommands = {};
+chatCommandsData.commands.forEach(cmd => {
+  chatCommands[cmd.command] = cmd;
+});
+document.getElementById('chat-cmds').innerHTML =
+  '<b>Chat Commands:</b><br>' +
+  chatCommandsData.commands.map(cmd => `${cmd.command}: ${cmd.description}`).join('<br>');
+    // Wheel drawing
+    function drawWheel(highlightIdx = null) {
+      const canvas = document.getElementById('wheel-canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 400, 400);
+      const n = choices.length;
+      const anglePer = 2 * Math.PI / n;
+      let startAngle = 0;
+      for (let i = 0; i < n; i++) {
+        ctx.beginPath();
+        ctx.moveTo(200, 200);
+        ctx.arc(200, 200, 190, startAngle, startAngle + anglePer, false);
+        ctx.closePath();
+        ctx.fillStyle = imageMode ? "#fff" : colors[i];
+        ctx.fill();
+        ctx.strokeStyle = "#222";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Highlight
+        if (highlightIdx === i) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(200, 200);
+          ctx.arc(200, 200, 170, startAngle, startAngle + anglePer, false);
+          ctx.closePath();
+          ctx.strokeStyle = "gold";
+          ctx.lineWidth = 6;
+          ctx.stroke();
+          ctx.restore();
+        }
+        // Text
+        ctx.save();
+        ctx.translate(200, 200);
+        let midAngle = startAngle + anglePer / 2;
+        ctx.rotate(midAngle);
+        ctx.textAlign = "center";
+        ctx.font = "bold 16px Arial";
+        ctx.fillStyle = "#000";
+        ctx.save();
+        ctx.rotate(Math.PI / 2);
+        ctx.fillText(choices[i], 120, 0);
+        ctx.restore();
+        ctx.restore();
+        startAngle += anglePer;
+      }
+      // Draw image overlay if enabled (placeholder)
+      if (imageMode && wheelImage) {
+        ctx.drawImage(wheelImage, 10, 10, 380, 380);
+      }
+    }
+
+    function randomColor() {
+      return "#" + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    }
+
+    function updateChoicesList() {
+      const ul = document.getElementById('choices-list');
+      ul.innerHTML = '';
+      choices.forEach((choice, idx) => {
+        const li = document.createElement('li');
+        li.textContent = choice;
+        li.style.cursor = 'pointer';
+        if (selectedIndex === idx) {
+          li.style.background = '#6cf';
+          li.style.color = '#222';
+        }
+        li.onclick = () => {
+          selectedIndex = idx;
+          document.getElementById('selected').textContent = `Selected: ${choice}`;
+          updateChoicesList();
+          drawWheel(selectedIndex);
+        };
+        ul.appendChild(li);
+      });
+      if (selectedIndex == null || selectedIndex >= choices.length) {
+        document.getElementById('selected').textContent = 'Selected: None';
+      }
+    }
+
+    function handleCmd(cmd, arg = null) {
+      if (cmd === '!add') {
+        let val = arg || document.getElementById('add-input').value.trim();
+        if (val && !choices.includes(val)) {
+          choices.push(val);
+          colors.push(randomColor());
+          updateChoicesList();
+          drawWheel();
+          document.getElementById('add-input').value = '';
+        }
+      }
+      if (cmd === '!remove') {
+        if (selectedIndex != null && selectedIndex >= 0 && selectedIndex < choices.length) {
+          choices.splice(selectedIndex, 1);
+          colors.splice(selectedIndex, 1);
+          selectedIndex = null;
+          updateChoicesList();
+          drawWheel();
+        }
+      }
+      if (cmd === '!shuffle') {
+        let zipped = choices.map((c, i) => [c, colors[i]]);
+        zipped = shuffle(zipped);
+        choices = zipped.map(z => z[0]);
+        colors = zipped.map(z => z[1]);
+        selectedIndex = null;
+        updateChoicesList();
+        drawWheel();
+      }
+      if (cmd === '!image') {
+        if (!imageMode) {
+          let input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          input.onchange = e => {
+            let file = e.target.files[0];
+            let reader = new FileReader();
+            reader.onload = function(ev) {
+              let img = new window.Image();
+              img.onload = function() {
+                wheelImage = img;
+                imageMode = true;
+                drawWheel();
+              };
+              img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+          };
+          input.click();
+        } else {
+          imageMode = false;
+          wheelImage = null;
+          drawWheel();
+        }
+      }
+      if (cmd === '!music') {
+        let input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'audio/*';
+        input.onchange = e => {
+          let file = e.target.files[0];
+          currentMusic = file;
+          alert('Music selected: ' + file.name);
+        };
+        input.click();
+      }
+      if (cmd === '!spin') {
+        if (spinning || choices.length === 0) return;
+        spinning = true;
+        let spinTime = Math.random() * 10 + 10; // 10-20 seconds
+        let slowDownTime = Math.random() * 1 + 2; // 2-3 seconds
+        let totalFrames = Math.floor(spinTime * 60);
+        let slowFrames = Math.floor(slowDownTime * 60);
+        let angle = 0;
+        let speed = 20;
+        let step = 360 / choices.length;
+        function animate(frame) {
+          angle = (angle + speed) % 360;
+          document.getElementById('wheel-canvas').style.transform = `rotate(${angle}deg)`;
+          if (frame < totalFrames) {
+            requestAnimationFrame(() => animate(frame + 1));
+          } else if (frame < totalFrames + slowFrames) {
+            speed = Math.max(1, speed - 0.2);
+            requestAnimationFrame(() => animate(frame + 1));
+          } else {
+            document.getElementById('wheel-canvas').style.transform = '';
+            let idx = Math.floor(((angle + 90) % 360) / step) % choices.length;
+            selectedIndex = idx;
+            updateChoicesList();
+            drawWheel(selectedIndex);
+            spinning = false;
+            // Play music (placeholder)
+            if (currentMusic) {
+              // You can add audio playback here
+            } else {
+              // Use default music
+            }
+          }
+        }
+        animate(0);
+      }
+      if (cmd === '!reset') {
+        choices = ["1", "2", "3", "4"];
+        colors = choices.map(() => randomColor());
+        selectedIndex = null;
+        currentMusic = null;
+        imageMode = false;
+        wheelImage = null;
+        updateChoicesList();
+        drawWheel();
+        alert('Wheel reset to default.');
+      }
+    }
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    // Initial render
+    updateChoicesList();
+    drawWheel();
+
+    // Twitch chat integration
+    // Replace 'your_channel' with your Twitch channel name
+    const client = new tmi.Client({
+  channels: [ 'dmxshock' ]
+});
+    client.connect();
+
+    client.on('message', (channel, tags, message, self) => {
+      // Log chat messages
+      const chatLog = document.getElementById('chat-log');
+      chatLog.innerHTML += `<div><b>${tags['display-name']}:</b> ${message}</div>`;
+      chatLog.scrollTop = chatLog.scrollHeight;
+
+      // Parse command and argument
+      const parts = message.trim().split(' ');
+      const cmd = parts[0];
+      const arg = parts.slice(1).join(' ');
+
+      // Only allow commands from mods/broadcaster (optional)
+      // if (!(tags.mod || (tags.badges && tags.badges.broadcaster))) return;
+
+      if (chatCommands[cmd]) {
+        if (cmd === '!add' && arg) {
+          handleCmd(cmd, arg);
+        } else {
+          handleCmd(cmd);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
