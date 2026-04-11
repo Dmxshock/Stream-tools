@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Action Random Wheel – Control</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #1b1b1b;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+    }
+
+    header {
+      padding: 10px;
+      font-weight: bold;
+      background: #333;
+      text-align: center;
+    }
+
+    #connection-status {
+      padding: 8px 10px;
+      font-size: 13px;
+      background: #252525;
+      border-bottom: 1px solid #444;
+    }
+
+    main {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    button {
+      padding: 8px 10px;
+      background: #444;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    button:hover {
+      background: #666;
+    }
+  </style>
+</head>
+<body>
+  <header>Action Random Wheel – Control (Step 1)</header>
+  <div id="connection-status">Connecting to overlay…</div>
+  <main>
+    <button id="btnPing">Ping Overlay</button>
+    <button id="btnTest1">Send Test Command 1</button>
+    <button id="btnTest2">Send Test Command 2</button>
+  </main>
+
+  <script src="wheel_commons.js"></script>
+  <script>
+    const statusEl = document.getElementById('connection-status');
+    const btnPing = document.getElementById('btnPing');
+    const btnTest1 = document.getElementById('btnTest1');
+    const btnTest2 = document.getElementById('btnTest2');
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    // Called by shared code when overlay acknowledges
+    function handleOverlayAck() {
+      setStatus('Connected to overlay ✔');
+    }
+
+    // Register handler with shared module
+    window.WHEEL_CONTROL_API = {
+      onOverlayAck: handleOverlayAck,
+      setStatus
+    };
+
+    // Initialize popup side
+    window.WHEEL_COMMONS.initControl();
+
+    btnPing.addEventListener('click', () => {
+      window.WHEEL_COMMONS.sendToOverlay({ type: 'ping' });
+    });
+
+    btnTest1.addEventListener('click', () => {
+      window.WHEEL_COMMONS.sendToOverlay({ type: 'test-command', payload: 'Test Command 1' });
+    });
+
+    btnTest2.addEventListener('click', () => {
+      window.WHEEL_COMMONS.sendToOverlay({ type: 'test-command', payload: 'Test Command 2' });
+    });
+  </script>
+</body>
+</html>
